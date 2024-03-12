@@ -1,113 +1,155 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @next/next/no-html-link-for-pages */
+import * as fal from "@fal-ai/serverless-client";
+import { useEffect, useRef, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { ModelIcon } from "@/components/icons/model-icon";
+import Link from "next/link";
+
+const DEFAULT_PROMPT =
+    "A cinematic shot of a baby raccoon wearing an intricate italian priest robe";
+
+function randomSeed() {
+  return Math.floor(Math.random() * 10000000).toFixed(0);
+}
+
+fal.config({
+  proxyUrl: "/api/proxy",
+});
+
+const INPUT_DEFAULTS = {
+  _force_msgpack: new Uint8Array([]),
+  enable_safety_checker: true,
+  image_size: "square_hd",
+  sync_mode: true,
+  num_images: 1,
+  num_inference_steps: "2",
+};
+
+export default function Lightning() {
+  const [image, setImage] = useState<null | string>(null);
+  const [prompt, setPrompt] = useState<string>(DEFAULT_PROMPT);
+  const [seed, setSeed] = useState<string>(randomSeed());
+  const [inferenceTime, setInferenceTime] = useState<number>(NaN);
+
+  const connection = fal.realtime.connect("fal-ai/fast-lightning-sdxl", {
+    connectionKey: "lightning-sdxl",
+    throttleInterval: 64,
+    onResult: (result) => {
+      console.log("result",result)
+      const blob = new Blob([result.images[0].content], { type: "image/jpeg" });
+      setImage(URL.createObjectURL(blob));
+      setInferenceTime(result.timings.inference);
+    },
+  });
+
+  const timer = useRef<any | undefined>(undefined);
+
+  const handleOnChange = async (prompt: string) => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
+    setPrompt(prompt);
+    const input = {
+      ...INPUT_DEFAULTS,
+      prompt: prompt,
+      seed: seed ? Number(seed) : Number(randomSeed()),
+    };
+    connection.send(input);
+    timer.current = setTimeout(() => {
+      connection.send({ ...input, num_inference_steps: "4" });
+    }, 500);
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.document.cookie = "fal-app=true; path=/; samesite=strict; secure;";
+    }
+    // initial image
+    connection.send({
+      ...INPUT_DEFAULTS,
+      num_inference_steps: "4",
+      prompt: prompt,
+      seed: seed ? Number(seed) : Number(randomSeed()),
+    });
+  }, []);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+      <main>
+        <div className="flex flex-col justify-between h-[calc(100vh-56px)]">
+          <div className="py-4 md:py-10 px-0 space-y-4 lg:space-y-8 mx-auto w-full max-w-xl">
+            <div className="container px-3 md:px-0 flex flex-col space-y-2">
+              <div className="flex flex-col max-md:space-y-4 md:flex-row md:space-x-4 max-w-full">
+                <div className="flex-1 space-y-1">
+                  <label>Prompt</label>
+                  <Input
+                      onChange={(e) => {
+                        handleOnChange(e.target.value);
+                      }}
+                      className="font-light w-full"
+                      placeholder="Type something..."
+                      value={prompt}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label>Seed</label>
+                  <Input
+                      onChange={(e) => {
+                        setSeed(e.target.value);
+                        handleOnChange(prompt);
+                      }}
+                      className="font-light w-28"
+                      placeholder="random"
+                      type="number"
+                      value={seed}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="container flex flex-col space-y-6 lg:flex-row lg:space-y-0 p-3 md:p-0">
+              <div className="flex-1 flex-col flex items-center justify-center">
+                {image && inferenceTime && (
+                    <div className="flex flex-row space-x-1 text-sm w-full mb-2">
+                      <span className="text-neutral-500">Inference time:</span>
+                      <span
+                          className={
+                            !inferenceTime ? "text-neutral-500" : "text-green-400"
+                          }
+                      >
+                    {inferenceTime
+                        ? `${(inferenceTime * 1000).toFixed(0)}ms`
+                        : `n/a`}
+                  </span>
+                    </div>
+                )}
+                <div className="md:min-h-[512px] max-w-fit">
+                  {image && (
+                      <img id="imageDisplay" src={image} alt="Dynamic Image" />
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="container flex flex-col items-center justify-center my-4">
+            <p className="text-sm text-base-content/70 py-4 text-center text-neutral-400">
+              This playground is hosted on{" "}
+              <strong>
+                <a href="https://fal.ai" className="underline" target="_blank">
+                  fal.ai
+                </a>
+              </strong>{" "}
+              and is for demonstration purposes only.
+            </p>
+            <div className="flex flex-row items-center space-x-2">
+              <span className="text-xs font-mono">powered by</span>
+              <Link href="https://fal.ai" target="_blank">
+                <ModelIcon />
+              </Link>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+      </main>
   );
 }
