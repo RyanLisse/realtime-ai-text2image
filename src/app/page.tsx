@@ -47,7 +47,7 @@ export default function Lightning() {
 
   const timer = useRef<any | undefined>(undefined);
 
-  const handleOnChange = async (prompt: string) => {
+  const handleOnChange =  (prompt: string) => {
     if (timer.current) {
       clearTimeout(timer.current);
     }
